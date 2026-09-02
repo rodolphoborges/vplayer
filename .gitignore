@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl/
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# pytest
+.pytest_cache/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Generated files
+timestamps.json
+timestamps_final*.json
+timestamps_new*.json
+timestamps_nocv.json
+timestamps_*.json
+
+# Temporary video files
+temp_video.mp4
+temp_cv_*.mp4
+*.mp4
+
+# Images / frames
+frames_test/
+frame_*.jpg
+*.jpg
+*.png
+*.webp
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/

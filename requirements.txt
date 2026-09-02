@@ -1,0 +1,16 @@
+fastapi>=0.110.0
+uvicorn>=0.28.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+pydantic>=2.6.0
+
+# Computer Vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
+
+# Video downloading
+yt-dlp>=2023.0.0
+
+# Testing
+pytest>=7.0.0
