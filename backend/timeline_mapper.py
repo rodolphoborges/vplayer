@@ -54,7 +54,26 @@ class TimelineMapper:
             return parts[0]
         return 0
 
-    # Remover estimate_round_duration para focar apenas no CV
+    @classmethod
+    def _estimate_fallback_starts(
+        cls,
+        map_info: Dict[str, Any],
+        anchor: int,
+        gap: int = 35,
+    ) -> List[int]:
+        """Estimates round starts from VLR duration when CV detection fails."""
+        rounds = map_info.get("rounds", [])
+        if not rounds:
+            return []
+        duration = int(map_info.get("duration_seconds", 0) or 0)
+        n = len(rounds)
+        if duration > 0 and n > 0:
+            # Distribute official duration across rounds + inter-round gaps.
+            avg_round = max(60, (duration - gap * (n - 1)) // n)
+            cadence = avg_round + max(0, gap)
+        else:
+            cadence = 90 + max(0, gap)
+        return [int(anchor) + i * int(cadence) for i in range(n)]
 
     @classmethod
     def generate_timeline(
@@ -79,25 +98,25 @@ class TimelineMapper:
             pre_buffer_seconds: Seconds before barrier drop (buy phase preview)
             post_buffer_seconds: Seconds after round ends (reaction & victory text)
             default_pause_gap_seconds: Approximate gap skipped between rounds
-            auto_detect_cv: If True, uses YouTube storyboards to detect exact 1:39 round starts
+            auto_detect_cv: If True, uses local 144p video to detect exact 1:39 round starts
         """
         video_id = cls.extract_youtube_id(youtube_url)
         clean_yt_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else youtube_url
         overrides = round_overrides or {}
 
-        # Parse anchor configuration
+        # Parse anchor configuration (keys always int, values in seconds).
         map_anchors: Dict[int, int] = {}
         if isinstance(anchors, dict):
             for k, v in anchors.items():
                 try:
-                    map_anchors[int(k)] = cls.parse_time_to_seconds(v)
-                except ValueError:
-                    pass
+                    map_anchors[int(str(k).strip())] = cls.parse_time_to_seconds(v)
+                except (ValueError, TypeError, AttributeError):
+                    continue
         elif anchors is not None:
             # Single anchor passed, assign to Map 1
             map_anchors[1] = cls.parse_time_to_seconds(anchors)
-        
-        # Default Map 1 anchor to 192 (or 0 if not provided)
+
+        # Default Map 1 anchor to 192 if not provided
         if 1 not in map_anchors:
             map_anchors[1] = 192
 
@@ -121,14 +140,12 @@ class TimelineMapper:
 
                 if downloaded:
                     for map_info in vlr_data.get("maps", []):
-                        m_num = map_info["map_number"]
+                        m_num = int(map_info["map_number"])
                         r_count = len(map_info.get("rounds", []))
                         if r_count == 0:
                             continue
                         if m_num in map_anchors:
                             m_start = map_anchors[m_num]
-                        elif str(m_num) in map_anchors:
-                            m_start = map_anchors[str(m_num)]
                         elif m_num == 1:
                             m_start = 180
                         else:
@@ -136,8 +153,9 @@ class TimelineMapper:
                             prev_ends = [
                                 d["end"] for prev_m in cv_data_by_map.values() for d in prev_m.values()
                             ]
-                            m_start = max(prev_ends) + 250 if prev_ends else 3600
-                        m_end = m_start + 3600
+                            m_start = max(prev_ends) + 180 if prev_ends else 3600
+                        duration_hint = int(map_info.get("duration_seconds", 0) or 0)
+                        m_end = m_start + (duration_hint + 600 if duration_hint > 0 else 3600)
                         print(f"[TimelineMapper] Scanning Map {m_num} ({map_info.get('map_name')}) from {m_start}s to {m_end}s...")
                         detected = VideoDetector.detect_round_starts(
                             local_video_path=local_vid_path,
@@ -169,38 +187,52 @@ class TimelineMapper:
         flat_timeline = []
 
         for map_info in vlr_data.get("maps", []):
-            map_num = map_info["map_number"]
-            map_name = map_info["map_name"]
+            map_num = int(map_info["map_number"])
+            map_name = map_info.get("map_name", f"Map {map_num}")
             rounds = map_info.get("rounds", [])
 
             map_start_anchor = map_anchors.get(map_num, 192)
+            # Fallback estimation when CV missed this map: avg round + gap cadence.
+            fallback_starts = cls._estimate_fallback_starts(
+                map_info=map_info,
+                anchor=map_start_anchor,
+                gap=default_pause_gap_seconds,
+            )
             processed_rounds = []
 
-            for r in rounds:
-                rnd_num = r["round"]
+            for idx, r in enumerate(rounds):
+                rnd_num = int(r["round"])
                 win_type = r.get("win_type", "elim")
 
-                # 1. Start & End priority: Explicit override > CV Detection > Missing
+                # 1. Start & End priority: Explicit override > CV Detection > Fallback estimate.
                 override_key = f"{map_num}-{rnd_num}"
-                override_data = overrides.get(override_key) or overrides.get(str(rnd_num)) if map_num == 1 else overrides.get(override_key)
-                
-                round_start = 0
-                round_end = 0
+                override_data = overrides.get(override_key)
+                if map_num == 1 and not override_data:
+                    override_data = overrides.get(str(rnd_num))
 
+                estimated = False
                 if override_data and "start" in override_data:
                     round_start = cls.parse_time_to_seconds(override_data["start"])
                 elif map_num in cv_data_by_map and rnd_num in cv_data_by_map[map_num]:
-                    round_start = cv_data_by_map[map_num][rnd_num]["start"]
+                    round_start = int(cv_data_by_map[map_num][rnd_num]["start"])
                 else:
-                    print(f"[TimelineMapper] Missing start for Map {map_num} Round {rnd_num}. CV might have failed.")
-                    continue
-                
+                    round_start = fallback_starts[idx] if idx < len(fallback_starts) else map_start_anchor + idx * 125
+                    estimated = True
+
                 if override_data and "end" in override_data:
                     round_end = cls.parse_time_to_seconds(override_data["end"])
                 elif map_num in cv_data_by_map and rnd_num in cv_data_by_map[map_num]:
-                    round_end = cv_data_by_map[map_num][rnd_num]["end"]
+                    round_end = int(cv_data_by_map[map_num][rnd_num]["end"])
                 else:
-                    print(f"[TimelineMapper] Missing end for Map {map_num} Round {rnd_num}. CV might have failed.")
+                    round_end = round_start + 85
+                    estimated = True
+
+                # 2. Apply buy-phase (pre) and celebration (post) buffers, unless explicitly overridden.
+                if not (override_data and "start" in override_data):
+                    round_start = max(0, round_start - int(pre_buffer_seconds or 0))
+                if not (override_data and "end" in override_data):
+                    round_end = round_end + int(post_buffer_seconds or 0)
+                if round_end <= round_start:
                     round_end = round_start + 60
 
                 round_entry = {
@@ -215,7 +247,8 @@ class TimelineMapper:
                     "side": r.get("side", "Attack"),
                     "score_team1": r.get("score_team1", 0),
                     "score_team2": r.get("score_team2", 0),
-                    "score_display": r.get("score_display", "")
+                    "score_display": r.get("score_display", ""),
+                    "estimated": estimated and not bool(override_data),
                 }
 
                 processed_rounds.append(round_entry)

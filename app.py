@@ -133,7 +133,7 @@ class ScanRequest(BaseModel):
 
 @app.post("/api/scan_storyboards")
 def scan_storyboards(req: ScanRequest):
-    """Runs automated CV/template matching on YouTube storyboards to detect round intervals."""
+    """Runs automated CV/template matching on local 144p video to detect round intervals."""
     try:
         from backend.video_detector import VideoDetector
         intervals = VideoDetector.scan_timeline(

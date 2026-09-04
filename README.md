@@ -28,7 +28,9 @@ vplayer/
 ├── backend/
 │   ├── __init__.py
 │   ├── vlr_scraper.py       # Extração de estatísticas e rounds do VLR.gg
-│   ├── timeline_mapper.py   # Algoritmo de mapeamento temporal e cálculo de intervalos
+│   ├── timeline_mapper.py   # Âncoras + buffers + fallback + fusão com CV
+│   ├── video_detector.py    # CV local 144p: detector 1:39, scan_timeline, thumbnails
+│   ├── templates/timer_139_144p.png  # Template do timer para matchTemplate
 │   └── exporter.py          # Serialização e validação de timestamps.json
 ├── static/
 │   ├── index.html           # SPA responsiva e cinematográfica (tema Valorant)
@@ -92,17 +94,23 @@ python generate_timestamps.py \
 - `--vlr`: URL ou ID da partida no VLR.gg.
 - `--yt`: URL da transmissão oficial no YouTube ou ID de 11 caracteres.
 - `--anchor`: Ponto de ancoragem inicial do Round 1 do Mapa 1 em segundos ou `MM:SS` (ex: `192` ou `03:12`).
-- `--anchors`: Mapeamento por mapa, ex: `"1=192,2=4250"`.
-- `--pre-buffer`: Segundos de buy phase antes do início (padrão: `8s`).
-- `--post-buffer`: Segundos de reação pós-round (padrão: `5s`).
+- `--anchors`: Mapeamento por mapa, ex: `"1=192,2=3926"` (sobrescreve `--anchor`).
+- `--pre-buffer`: Segundos de buy phase antes do início (padrão: `8`). Aplicado ao `start` do CV/fallback, exceto overrides explícitos.
+- `--post-buffer`: Segundos de reação pós-round (padrão: `5`). Aplicado ao `end` do CV/fallback, exceto overrides explícitos.
+- `--gap`: Gap usado na estimativa fallback quando o CV falha (padrão: `35`).
 - `--output`: Caminho do arquivo JSON gerado (padrão: `timestamps.json`).
 - `--format`: Formato de saída (`full` com metadados ou `flat` com array simples).
+- `--no-cv`: Desabilita detecção 144p via `yt-dlp`+OpenCV e usa só estimativa por âncora/duração VLR.
+
+Prioridade por round: `round_overrides {"1-1": {"start","end"}}` > detecção CV 1:39 > estimativa fallback (`estimated: true`).
 
 ---
 
 ## 📋 Especificação do `timestamps.json`
 
 O arquivo estruturado gerado segue a especificação:
+
+> `timestamps.json` está no `.gitignore` (exceto o exemplo commitado `LOUD vs MIBR`). Para versionar um exemplo, copie para `timestamps.example.json`.
 
 ```json
 {
@@ -111,14 +119,20 @@ O arquivo estruturado gerado segue a especificação:
   "vlr_url": "https://www.vlr.gg/734312/loud-vs-mibr-vct-2026-americas-stage-2-lr2",
   "match_info": {
     "event": "VCT 2026: Americas Stage 2 Playoffs",
-    "team1": {"name": "LOUD"},
-    "team2": {"name": "MIBR"},
-    "score": "2 - 0"
+    "team1": {"name": "LOUD", "logo": "https://..."},
+    "team2": {"name": "MIBR", "logo": "https://..."},
+    "score": "2 : 0"
+  },
+  "settings": {
+    "pre_buffer_seconds": 8,
+    "post_buffer_seconds": 5,
+    "anchors": {"1": 193, "2": 3926}
   },
   "summary": {
     "total_maps": 2,
-    "total_rounds": 48,
-    "total_clean_duration_formatted": "73:24"
+    "total_rounds": 46,
+    "total_clean_duration_seconds": 3428,
+    "total_clean_duration_formatted": "57:08"
   },
   "timeline": [
     {
@@ -160,10 +174,34 @@ O arquivo estruturado gerado segue a especificação:
 
 ---
 
+## 🔌 API REST (FastAPI)
+
+| Método | Rota | Corpo | Retorno |
+|---|---|---|---|
+| GET | `/api/status` | — | `{status, has_timestamps_file}` |
+| GET | `/api/timestamps` | — | `timestamps.json` completo |
+| POST | `/api/process` | `{vlr_url, youtube_url, anchor_seconds, anchors, round_overrides, pre_buffer_seconds, post_buffer_seconds, auto_detect_cv}` | `{success, data}` + salva `timestamps.json` |
+| POST | `/api/save` | `{data}` | Salva calibração do Producer Mode |
+| POST | `/api/scan_storyboards` | `{youtube_url, start_seconds, end_seconds}` | `{intervals: [{round,start,end}]}` via vídeo local 144p |
+| POST | `/api/thumbnails` | `{youtube_url, start_seconds, end_seconds, step_seconds}` | `{thumbnails: [{time, formatted, thumbnail base64, is_start_candidate, is_end_candidate}]}` |
+
+## 🤖 Detecção CV local 144p
+
+- Baixa `bestvideo[height<=144]` via `yt-dlp` para `temp_cv_{id}.mp4` (reusa `temp_inspect.mp4` se existir; `KEEP_TEMP_VIDEO=1` impede limpeza).
+- `detect_round_starts`: procura `1:39` em `gray[0:14,120:136]` com `matchTemplate + contraste do ":"`, agrupa clusters (`gap<=10s`, `count>=8`, `span>=8s`, `gap>=65s`), fim por `is_hud_active()`.
+- Limitações: depende de `yt-dlp`+`ffmpeg` e do template `backend/templates/timer_139_144p.png`; VODs privados/restritos falham → cai no fallback estimado; overlay do broadcast fora do padrão 144p reduz precisão.
+- Atalho sem rede: `generate_timestamps.py --no-cv` ou `auto_detect_cv=false`.
+
 ## 🧪 Executando os Testes Automatizados
 
-Para rodar a suíte de testes com validação do scraper, gerador de timeline e API:
+Unitários herméticos (sem rede, sem sobrescrever `timestamps.json` real):
 
 ```bash
 python -m pytest -v tests/test_all.py
+```
+
+Com rede (VLR.gg real):
+
+```bash
+RUN_NETWORK_TESTS=1 python -m pytest -v tests/test_all.py
 ```
