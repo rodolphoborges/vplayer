@@ -1,5 +1,7 @@
 # 🎮 Auto-Stream Valorant Clean Player (VOD Stream Cleaner)
 
+> **Aviso legal:** projeto de estudo, sem afiliação com Riot Games, YouTube ou VLR.gg. `VALORANT` é marca da Riot Games. Não baixe, redistribua ou espelhe VODs. O player apenas navega por timestamps via YouTube IFrame API no vídeo oficial. A detecção CV via `yt-dlp` é opt-in (`auto_detect_cv=False` por padrão), pode violar os Termos do YouTube e é de responsabilidade do usuário. Respeite os ToS do VLR.gg (cache, rate-limit, atribuição) e não use para bloquear anúncios do YouTube.
+
 Aplicação modular (Backend em Python e Frontend em HTML5/JS/CSS) desenvolvida para processar transmissões e VODs oficiais de campeonatos de **VALORANT** no YouTube e exibi-los em um **Player Contínuo Inteligente**, eliminando automaticamente:
 - 🚫 Pausas táticas e técnicas
 - 🚫 Intervalos comerciais

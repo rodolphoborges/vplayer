@@ -44,7 +44,7 @@ class ProcessRequest(BaseModel):
     round_overrides: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Explicit round overrides dict")
     pre_buffer_seconds: int = Field(8, description="Pre-round buy phase buffer in seconds")
     post_buffer_seconds: int = Field(5, description="Post-round celebration buffer in seconds")
-    auto_detect_cv: bool = Field(True, description="Enable automatic 1:39 storyboard CV detection")
+    auto_detect_cv: bool = Field(False, description="Opt-in: download 144p via yt-dlp for CV detection (requires user consent, subject to YouTube ToS)")
 
 
 class SaveRequest(BaseModel):

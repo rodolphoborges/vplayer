@@ -85,11 +85,11 @@ class TimelineMapper:
         pre_buffer_seconds: int = 8,
         post_buffer_seconds: int = 5,
         default_pause_gap_seconds: int = 35,
-        auto_detect_cv: bool = True,
+        auto_detect_cv: bool = False,
     ) -> Dict[str, Any]:
         """
         Builds the clean continuous timeline structure.
-        
+
         Args:
             vlr_data: Structured data from VLRScraper.parse_match
             youtube_url: Full YouTube URL or Video ID
@@ -98,7 +98,7 @@ class TimelineMapper:
             pre_buffer_seconds: Seconds before barrier drop (buy phase preview)
             post_buffer_seconds: Seconds after round ends (reaction & victory text)
             default_pause_gap_seconds: Approximate gap skipped between rounds
-            auto_detect_cv: If True, uses local 144p video to detect exact 1:39 round starts
+            auto_detect_cv: Opt-in only. If True, downloads 144p via yt-dlp (YouTube ToS risk, user responsibility).
         """
         video_id = cls.extract_youtube_id(youtube_url)
         clean_yt_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else youtube_url
